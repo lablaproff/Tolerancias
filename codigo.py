@@ -18,11 +18,11 @@ def calcular_tolerancia_sensor(rango_min, rango_max, sensor_type, tolerancia_sen
 
 def calcular_tolerancia_metrologica(errores, incertidumbre_patron, rango_calibrado,
                                     tolerancia_transmisor, tolerancia_plc, tolerancia_pantalla,
-                                    sensor_type, tolerancia_sensor_input=None, unidad="°C"):
+                                    sensor_type, tolerancia_sensor_input=None, unidad=""):
     """
     Calcula la tolerancia metrológica combinando:
-      - La incertidumbre estadística de los errores (desviación estándar) y la incertidumbre del patrón.
-      - Una incertidumbre expandida (k=2, ~95% de confianza) con un ajuste práctico (suma de 0.05).
+      - La incertidumbre estadística (desviación estándar de los errores) y la incertidumbre del patrón.
+      - Una incertidumbre expandida (k=2, ~95% de confianza) con un ajuste práctico (se suma 0.05).
       - La combinación en cuadratura de las tolerancias de todos los componentes.
     """
     desviacion_estandar = np.std(errores, ddof=1)
@@ -147,16 +147,15 @@ class SensorCalibrationAnalyzer:
 # ================================
 def calibracion_por_comparacion(df):
     """
-    Para calibración por comparación se asume que el usuario ingresa 10 pares:
-      - 'valor_equipo': medida obtenida del equipo en prueba.
-      - 'valor_referencia': valor medido con el instrumento calibrado.
-    Se calcula el error (diferencia) y se obtienen estadísticas.
+    En calibración por comparación se ingresa 10 pares:
+      - 'valor_equipo': medida del equipo.
+      - 'valor_referencia': medida con instrumento calibrado.
+    Se calcula el error (diferencia) y se extraen estadísticas.
     """
     df["error"] = df["valor_equipo"] - df["valor_referencia"]
     error_medio = np.mean(df["error"])
     error_maximo = np.max(np.abs(df["error"]))
     desviacion_estandar = np.std(df["error"], ddof=1)
-    # Tolerancia de transmisión se define, por ejemplo, como 2*STD (k=2)
     tolerancia_transmision = 2 * desviacion_estandar
     return {
         "Error medio": round(error_medio, 4),
@@ -166,9 +165,8 @@ def calibracion_por_comparacion(df):
     }
 
 # ================================
-# Interfaz principal
+# Interfaz Principal
 # ================================
-
 st.title("Calibración y Tolerancia de Transmisión de Sensores")
 
 # Seleccionar el caso
@@ -177,7 +175,7 @@ caso = st.radio("Seleccione el caso a utilizar:",
                          "B: Solo Calibración del Proveedor", 
                          "C: Calibración por Comparación"])
 
-# Selección de tipo de sensor y unidades
+# Selección de tipo de sensor
 sensor_options = {
     "Temperatura": "temperatura",
     "Presión": "presion",
@@ -186,13 +184,12 @@ sensor_options = {
 }
 sensor_elegido = st.selectbox("Seleccione el tipo de sensor", list(sensor_options.keys()))
 sensor_type = sensor_options[sensor_elegido]
-unidad = "°C" if sensor_type == "temperatura" else (
-    "bar" if sensor_type == "presion" else (
-        "m³/h" if sensor_type == "caudal" else "rpm"
-    )
-)
 
-# Rango de calibración (para casos A y B; en caso C se puede usar para conocer el span)
+# Permitir al usuario ingresar la unidad de medida, con un valor por defecto según el sensor
+default_units = {"temperatura": "°C", "presion": "bar", "caudal": "m³/h", "velocidad": "rpm"}
+unidad = st.text_input("Ingrese la unidad de medida para el sensor", value=default_units[sensor_type])
+
+# Rango de calibración (aplica para casos A y B, y para conocer el span en C)
 st.subheader("Rango de Calibración")
 rango_min = st.number_input(f"Ingrese límite inferior del rango ({unidad})", value=0.0)
 rango_max = st.number_input(f"Ingrese límite superior del rango ({unidad})", value=100.0)
@@ -233,7 +230,6 @@ if caso.startswith("A"):
                 st.error("No se procesaron datos válidos.")
             else:
                 df_calibracion = pd.DataFrame(datos)
-                # Usamos el enfoque metrológico
                 resultados = calcular_tolerancia_metrologica(
                     errores=df_calibracion['error'].to_numpy(),
                     incertidumbre_patron=incertidumbre_patron,
@@ -256,7 +252,6 @@ elif caso.startswith("B"):
     st.subheader("Caso B: Información de calibración del proveedor")
     st.write("Ingrese los datos de calibración en el formato: **valor_medido,error** (una línea por dato)")
     calibracion_text = st.text_area("Datos de calibración", height=150, placeholder="Ejemplo:\n25.0,0.2\n30.0,-0.1")
-    # Selección de clase de precisión (usada en el método normativo)
     st.subheader("Clase de Precisión")
     precision_map = {"Alta precisión": "alta", "Precisión estándar": "estandar", "Baja precisión": "baja"}
     clase_precision_elegida = st.selectbox("Seleccione la clase de precisión", list(precision_map.keys()))
@@ -286,7 +281,6 @@ elif caso.startswith("B"):
                 )
                 st.subheader("Resultados Normativos (Caso B)")
                 for clave, valor in resultados.items():
-                    # Se omiten los detalles intermedios
                     if clave != "Detalles":
                         st.write(f"**{clave}**: {valor}")
 
